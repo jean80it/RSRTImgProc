@@ -62,8 +62,8 @@ void GetBorder(const uchar *v_in, uchar4 *v_out, const void *usrData, uint32_t x
     const uchar *e23 = rsGetElementAt(gIn, x, y+1);
     const uchar *e33 = rsGetElementAt(gIn, x+1, y+1);
 
-    uchar res = (uchar)((abs(*e21 - *e22)+abs(*e12 - *e22)+abs(*e32 - *e22)+abs(*e23 - *e22))*k1 + 
-                (abs(*e11 - *e22)+abs(*e31 - *e22)+abs(*e13 - *e22)+abs(*e33 - *e22))*k2);
+    uchar res = (uchar)clamp(((abs(*e21 - *e22)+abs(*e12 - *e22)+abs(*e32 - *e22)+abs(*e23 - *e22))*k1 + 
+                (abs(*e11 - *e22)+abs(*e31 - *e22)+abs(*e13 - *e22)+abs(*e33 - *e22))*k2)*2,0,255);
 
     uchar4 res4;
 
