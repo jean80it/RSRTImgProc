@@ -112,3 +112,51 @@ void SimpleBlur(const uchar *v_in, uchar4 *v_out, const void *usrData, uint32_t 
 
     *v_out = res4;
 }
+
+
+// follows the implementation of a separated Sobel filter
+//
+// 1 0 -1
+// 2 0 -2
+// 1 0 -1
+// 
+// separated into
+//
+// 1
+// 2
+// 1
+//
+// and
+// 
+// 1 0 -1
+//
+// first pass takes uchar scalar values and fills output of float scalar values;
+// second pass takes that single float channel and outputs three identical
+// RGB channels, to compose a grayscale bitmap
+//
+void SobelHorizontal(const uchar *v_in, float *v_out, const void *usrData, uint32_t x, uint32_t y) 
+{
+    const uchar *e12 = rsGetElementAt(gIn, clamp((float)x - 1, 0.0f, (float)width), y); // no int clamp ?!?!?
+    const uchar *e22 = rsGetElementAt(gIn, x, y); 
+    const uchar *e32 = rsGetElementAt(gIn, clamp((float)x + 1, 0.0f, (float)width), y);
+
+    *v_out = *e22*2.0f + *e12 + *e32;
+}
+
+void SobelVertical(const float *v_in, uchar4 *v_out, const void *usrData, uint32_t x, uint32_t y) 
+{
+    const float *e21 = rsGetElementAt(gIn, x, clamp((float)y - 1, 0.0f, (float)height)); 
+    const float *e22 = rsGetElementAt(gIn, x, y); 
+    const float *e23 = rsGetElementAt(gIn, x, clamp((float)y + 1, 0.0f, (float)height));
+
+    uchar res =  clamp(*e22*2 + *e21 + *e23, 0.0f, 255.0f);
+    uchar4 res4;
+
+    res4.r = res;
+    res4.g = res;
+    res4.b = res;
+    res4.a = res;
+
+    *v_out = res4;
+}
+
