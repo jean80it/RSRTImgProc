@@ -137,10 +137,9 @@ void SimpleBlur(const uchar *v_in, uchar4 *v_out, const void *usrData, uint32_t 
 void SobelHorizontal(const uchar *v_in, float *v_out, const void *usrData, uint32_t x, uint32_t y) 
 {
     const uchar *e12 = rsGetElementAt(gIn, clamp((float)x - 1, 0.0f, (float)width), y); // no int clamp ?!?!?
-    const uchar *e22 = rsGetElementAt(gIn, x, y); 
     const uchar *e32 = rsGetElementAt(gIn, clamp((float)x + 1, 0.0f, (float)width), y);
 
-    *v_out = *e22*2.0f + *e12 + *e32;
+    *v_out = *e12 - *e32;
 }
 
 void SobelVertical(const float *v_in, uchar4 *v_out, const void *usrData, uint32_t x, uint32_t y) 
