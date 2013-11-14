@@ -18,6 +18,9 @@ package com.stareatit.RSRTImgProc;
 
 import android.app.Activity;
 import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.ImageFormat;
+import android.graphics.Paint;
 import android.hardware.Camera;
 import android.hardware.Camera.Parameters;
 import android.hardware.Camera.PreviewCallback;
@@ -43,15 +46,23 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback
     ScriptC_filter _filtersLib = null;
     
     Allocation _inData = null;
+    Allocation _tmpData = null;
     Allocation _outData = null;
     
     Bitmap _outBmp = null;
-    ImageView _imageView = null;
     
     int _previewSamples = 0;
     
-    SurfaceView _surfaceView;
-    SurfaceHolder _holder;
+    SurfaceView _livePreviewSurface;
+    SurfaceHolder _livePreviewSurfaceHolder;
+    
+    SurfaceView _processedSurface;
+    SurfaceHolder _processedSurfaceHolder;
+    
+    //ScriptGroup _sobelGroup;
+    
+    final Object _busyLock = new Object();
+    boolean busy = false;
     
     @Override
     public void onCreate(Bundle savedInstanceState)
@@ -63,16 +74,17 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback
         
         setContentView(R.layout.main);
               
-        _surfaceView = (SurfaceView)findViewById(R.id.surfaceView);
-        _holder = _surfaceView.getHolder();
-        _holder.addCallback(this);
+        _livePreviewSurface = (SurfaceView)findViewById(R.id.surfaceView); 
+        _livePreviewSurfaceHolder = _livePreviewSurface.getHolder();
+        _livePreviewSurfaceHolder.addCallback(this); 
 
         //deprecated in api level 11. Since here we need at least 14, it is no use.
         //mHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
         
-        _surfaceView.setKeepScreenOn(true);
+        _livePreviewSurface.setKeepScreenOn(true);
         
-        _imageView =  (ImageView)findViewById(R.id.imageView);
+        _processedSurface =  (SurfaceView)findViewById(R.id.imageView);
+        _processedSurfaceHolder = _livePreviewSurface.getHolder();
         
         // renderscript stuff
         
@@ -98,22 +110,76 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback
         Type.Builder tbIn = new Type.Builder(_renderScript, Element.U8(_renderScript));
         tbIn.setX(w);
         tbIn.setY(h);
+        //tbIn.setZ(1);
         tbIn.setMipmaps(false);
+        tbIn.setFaces(false);
+        
+        Type.Builder tbTmp = new Type.Builder(_renderScript, Element.F32(_renderScript));
+        tbTmp.setX(w);
+        tbTmp.setY(h);
+        //tbTmp.setZ(1);
+        tbTmp.setMipmaps(false);
+        tbTmp.setFaces(false);
         
         Type.Builder tbOut = new Type.Builder(_renderScript, Element.RGBA_8888(_renderScript));
         tbOut.setX(w); 
         tbOut.setY(h);
+        //tbOut.setZ(1);
         tbOut.setMipmaps(false);
-                
+        tbOut.setFaces(false);
+        
         _inData = Allocation.createTyped(_renderScript, tbIn.create(), Allocation.MipmapControl.MIPMAP_NONE,  Allocation.USAGE_SCRIPT & Allocation.USAGE_SHARED);
+        _tmpData = Allocation.createTyped(_renderScript, tbTmp.create(), Allocation.MipmapControl.MIPMAP_NONE,  Allocation.USAGE_SCRIPT & Allocation.USAGE_SHARED);
         _outData = Allocation.createTyped(_renderScript, tbOut.create(), Allocation.MipmapControl.MIPMAP_NONE,  Allocation.USAGE_SCRIPT & Allocation.USAGE_SHARED);
         _outBmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         
         _filtersLib.set_gScript(_filtersLib);
         _filtersLib.set_gIn(_inData);
+        _filtersLib.set_gTmp(_tmpData);
         _filtersLib.set_gOut(_outData);
         _filtersLib.set_width(w);
         _filtersLib.set_height(h);
+        
+//        Script.KernelID sobel1 = _filtersLib.getKernelID_SobelFirstPassH();
+//        Script.KernelID sobel2 = _filtersLib.getKernelID_SobelSecondPassV();
+//        ScriptGroup.Builder groupBuilder = new ScriptGroup.Builder(_renderScript);
+//        groupBuilder.addKernel(sobel1);
+//        groupBuilder.addKernel(sobel2);
+//        groupBuilder.addConnection(tbTmp.create(), sobel1, sobel2);
+//        _sobelGroup = groupBuilder.create();
+    }
+    
+    private Size getNearestSize(int sw, int sh, List<Size> sizes)
+    {
+        int err = 1000000;
+        int idx = -1;
+        for (int i=0;i<sizes.size(); ++i)
+        {
+            Size ns = sizes.get(i);
+            int newErr = Math.abs(ns.width - sw) + Math.abs(ns.height - sh);
+            if ((idx<0)|| (newErr<err))
+            {
+                err = newErr;
+                idx = i;
+            }
+        }
+        return sizes.get(idx);
+    }
+    
+    private int[] getFastestFpsRange(List<int[]> ranges)
+    {
+        int max = 0;
+        int idx = -1;
+        for (int i=0;i<ranges.size(); ++i)
+        {
+            int[] range = ranges.get(i);
+            if ((idx<0)||(range[1]>max))
+            {
+                max = range[1];
+                idx = i;
+            }
+        }
+        return ranges.get(idx);
     }
     
     // handling camera object (and related) through activity states
@@ -125,10 +191,23 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback
             
             Parameters cameraParameters = _camera.getParameters();
             
-            // get preview size and init buffers accordingly
+            cameraParameters.setPreviewFormat(ImageFormat.NV21); // surely available
+            Size s = getNearestSize(640,480, cameraParameters.getSupportedPreviewSizes()); // 640x480 arbitrarily chosen
+            cameraParameters.setPreviewSize(s.width, s.height);
+            
+            int[] range = getFastestFpsRange(cameraParameters.getSupportedPreviewFpsRange());
+            cameraParameters.setPreviewFpsRange(range[0], range[1]);
+            
+            // get actual preview size and init buffers accordingly
             Size previewSize = cameraParameters.getPreviewSize();
-            // could chose another size here
+            
             initStuff(previewSize.width, previewSize.height); 
+            
+            // try setting continuous auto focus
+            List<String> focusModes = cameraParameters.getSupportedFocusModes();
+            if (focusModes.contains( Camera.Parameters.FOCUS_MODE_CONTINUOUS_VIDEO)) {
+                cameraParameters.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_VIDEO); 
+            }
             
             // init preview callback
             _camera.setPreviewCallbackWithBuffer(_previewCallback);
@@ -140,11 +219,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback
             //p.set("orientation", "portrait");
             //cameraParameters.setRotation(90);
             
-            // try setting continuous auto focus
-            List<String> focusModes = cameraParameters.getSupportedFocusModes();
-            if (focusModes.contains( Camera.Parameters.FOCUS_MODE_CONTINUOUS_VIDEO)) {
-                cameraParameters.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_VIDEO); 
-            }
             
             _camera.setParameters(cameraParameters);
             
@@ -154,14 +228,61 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback
     PreviewCallback _previewCallback = new PreviewCallback(){
         public void onPreviewFrame(byte[] data, Camera camera) {
 
-            _inData.copy1DRangeFrom(0, _previewSamples, data);
-            _filtersLib.forEach_GetBorder(_inData, _outData);
-            _outData.copyTo(_outBmp);
-            // TODO: rotate bmp
-            _imageView.setImageBitmap(_outBmp);
-            _imageView.invalidate();
-                    
+            synchronized(_busyLock)
+            {
+                if (busy) // safely skip frames if we're not ready to process next
+                {
+                    camera.addCallbackBuffer(data);
+                    return; 
+                }
+                busy = true;
+            }
+            
+            try
+            {
+                // copy data from preview buffer to allocation
+                _inData.copy1DRangeFrom(0, _previewSamples, data);
+                
+                // CALL THE ACTUAL RS FILTER
+                
+                // single kernel call
+                //_filtersLib.forEach_GetBorder(_inData, _outData);
+                
+                // two calls to execute a two-pass filter
+                _filtersLib.forEach_SobelFirstPassH(_inData, _tmpData);
+                _filtersLib.forEach_SobelSecondPassV(_tmpData, _outData);
+                
+                // call to a ScriptGroup to execute a two-pass filter
+                //_sobelGroup.execute();
+                
+                // call to a single RS function that handles multiple phases
+                // ...
+                
+                // get output
+                _outData.copyTo(_outBmp);
+                
+                // TODO: rotate bmp
+                
+                // display outcome
+                display(_outBmp);
+            }
+            catch (Exception e){}
+            
             camera.addCallbackBuffer(data);
+            
+            busy = false;
+        }
+
+        private void display(Bitmap _outBmp) 
+        {
+            if(_processedSurfaceHolder.getSurface().isValid())
+            {
+                Canvas canvas = _processedSurfaceHolder.lockCanvas();
+            
+                canvas.drawBitmap(_outBmp, null, new Paint());
+
+                _processedSurfaceHolder.unlockCanvasAndPost(canvas);
+           }
         }
     };
     

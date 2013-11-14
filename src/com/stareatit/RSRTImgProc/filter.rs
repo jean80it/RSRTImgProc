@@ -20,6 +20,7 @@
 
 // use of globals to operate on whole image (GetBorder and SimpleBlur)
 rs_allocation gIn;
+rs_allocation gTmp;
 rs_allocation gOut;
 rs_script gScript;
 int width;
@@ -134,28 +135,22 @@ void SimpleBlur(const uchar *v_in, uchar4 *v_out, const void *usrData, uint32_t 
 // second pass takes that single float channel and outputs three identical
 // RGB channels, to compose a grayscale bitmap
 //
-void SobelHorizontal(const uchar *v_in, float *v_out, const void *usrData, uint32_t x, uint32_t y) 
+void SobelFirstPassH(const uchar *v_in, float *v_out, const void *usrData, uint32_t x, uint32_t y) 
 {
-    const uchar *e12 = rsGetElementAt(gIn, clamp((float)x - 1, 0.0f, (float)width), y); // no int clamp ?!?!?
-    const uchar *e32 = rsGetElementAt(gIn, clamp((float)x + 1, 0.0f, (float)width), y);
+    const uchar *e12 = rsGetElementAt(gIn, clamp((float)x - 1, 0.0f, (float)width), y); // no int clamp ?!?!? we need to clamp to avoid
+    const uchar *e32 = rsGetElementAt(gIn, clamp((float)x + 1, 0.0f, (float)width), y); // TODO: use rsGetElementAt_TYPE to allow for better optimization
 
+    //rsSetElementAt_float(gTmp, (*e12 - *e32), x, y);
     *v_out = *e12 - *e32;
 }
 
-void SobelVertical(const float *v_in, uchar4 *v_out, const void *usrData, uint32_t x, uint32_t y) 
+void SobelSecondPassV(const float *v_in, uchar4 *v_out, const void *usrData, uint32_t x, uint32_t y) 
 {
-    const float *e21 = rsGetElementAt(gIn, x, clamp((float)y - 1, 0.0f, (float)height)); 
-    const float *e22 = rsGetElementAt(gIn, x, y); 
-    const float *e23 = rsGetElementAt(gIn, x, clamp((float)y + 1, 0.0f, (float)height));
+    const float *e21 = rsGetElementAt(gTmp, x, clamp((float)y - 1, 0.0f, (float)height)); 
+    const float *e22 = rsGetElementAt(gTmp, x, y); 
+    const float *e23 = rsGetElementAt(gTmp, x, clamp((float)y + 1, 0.0f, (float)height));
 
     uchar res =  clamp(*e22*2 + *e21 + *e23, 0.0f, 255.0f);
-    uchar4 res4;
-
-    res4.r = res;
-    res4.g = res;
-    res4.b = res;
-    res4.a = res;
-
-    *v_out = res4;
+    
+    *v_out =(uchar4){res, res, res, 255};
 }
-
