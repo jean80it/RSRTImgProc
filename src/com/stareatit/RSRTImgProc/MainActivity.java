@@ -18,9 +18,7 @@ package com.stareatit.RSRTImgProc;
 
 import android.app.Activity;
 import android.graphics.Bitmap;
-import android.graphics.Canvas;
 import android.graphics.ImageFormat;
-import android.graphics.Paint;
 import android.hardware.Camera;
 import android.hardware.Camera.Parameters;
 import android.hardware.Camera.PreviewCallback;
@@ -36,7 +34,7 @@ import android.widget.ImageView;
 import java.io.IOException;
 import java.util.List;
 
-public class MainActivity extends Activity implements SurfaceHolder.Callback
+public class MainActivity extends Activity
 {
     private static final String TAG = "RSRTImgProcMain";
     
@@ -56,7 +54,7 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback
     SurfaceView _livePreviewSurface;
     SurfaceHolder _livePreviewSurfaceHolder;
     
-    SurfaceView _processedSurface;
+    ImageView _processedSurface;
     SurfaceHolder _processedSurfaceHolder;
     
     //ScriptGroup _sobelGroup;
@@ -74,22 +72,44 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback
         
         setContentView(R.layout.main);
               
-        _livePreviewSurface = (SurfaceView)findViewById(R.id.surfaceView); 
+        _livePreviewSurface = (SurfaceView)findViewById(R.id.previewView); 
         _livePreviewSurfaceHolder = _livePreviewSurface.getHolder();
-        _livePreviewSurfaceHolder.addCallback(this); 
+        _livePreviewSurfaceHolder.addCallback(new SurfaceHolder.Callback() {
+
+            public void surfaceCreated(SurfaceHolder holder) {
+                try {
+                    if (_camera != null) {
+                        _camera.setPreviewDisplay(holder);
+                    }
+                } catch (IOException exception) {
+                    Log.e(TAG, "IOException caused by setPreviewDisplay()", exception);
+                }
+            }
+
+            public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+                //
+            }
+
+            public void surfaceDestroyed(SurfaceHolder holder) {
+                if (_camera != null) {
+                    _camera.stopPreview();
+                }
+            }
+        }); 
 
         //deprecated in api level 11. Since here we need at least 14, it is no use.
         //mHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS);
         
         _livePreviewSurface.setKeepScreenOn(true);
         
-        _processedSurface =  (SurfaceView)findViewById(R.id.imageView);
-        _processedSurfaceHolder = _livePreviewSurface.getHolder();
+        _processedSurface =  (ImageView)findViewById(R.id.processedView);
         
         // renderscript stuff
         
         _renderScript = RenderScript.create(this); // <<The RenderScript context can be destroyed with destroy() or by allowing the RenderScript context object to be garbage collected.>>
         _filtersLib = new ScriptC_filter(_renderScript);
+    
+        //(new Thread(this)).start();
     }
 
     private void initStuff(int w, int h) // TODO: handle RGB, RGBA fotmats, too
@@ -133,20 +153,14 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback
         _outData = Allocation.createTyped(_renderScript, tbOut.create(), Allocation.MipmapControl.MIPMAP_NONE,  Allocation.USAGE_SCRIPT & Allocation.USAGE_SHARED);
         _outBmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
         
+        _processedSurface.setImageBitmap(_outBmp);
+                
         _filtersLib.set_gScript(_filtersLib);
         _filtersLib.set_gIn(_inData);
         _filtersLib.set_gTmp(_tmpData);
         _filtersLib.set_gOut(_outData);
         _filtersLib.set_width(w);
         _filtersLib.set_height(h);
-        
-//        Script.KernelID sobel1 = _filtersLib.getKernelID_SobelFirstPassH();
-//        Script.KernelID sobel2 = _filtersLib.getKernelID_SobelSecondPassV();
-//        ScriptGroup.Builder groupBuilder = new ScriptGroup.Builder(_renderScript);
-//        groupBuilder.addKernel(sobel1);
-//        groupBuilder.addKernel(sobel2);
-//        groupBuilder.addConnection(tbTmp.create(), sobel1, sobel2);
-//        _sobelGroup = groupBuilder.create();
     }
     
     private Size getNearestSize(int sw, int sh, List<Size> sizes)
@@ -249,14 +263,8 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback
                 //_filtersLib.forEach_GetBorder(_inData, _outData);
                 
                 // two calls to execute a two-pass filter
-                _filtersLib.forEach_SobelFirstPassH(_inData, _tmpData);
-                _filtersLib.forEach_SobelSecondPassV(_tmpData, _outData);
-                
-                // call to a ScriptGroup to execute a two-pass filter
-                //_sobelGroup.execute();
-                
-                // call to a single RS function that handles multiple phases
-                // ...
+                _filtersLib.forEach_SobelFirstPass(_inData, _tmpData);
+                _filtersLib.forEach_SobelSecondPass(_inData, _outData);
                 
                 // get output
                 _outData.copyTo(_outBmp);
@@ -264,25 +272,13 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback
                 // TODO: rotate bmp
                 
                 // display outcome
-                display(_outBmp);
+                _processedSurface.invalidate();
             }
             catch (Exception e){}
             
             camera.addCallbackBuffer(data);
             
             busy = false;
-        }
-
-        private void display(Bitmap _outBmp) 
-        {
-            if(_processedSurfaceHolder.getSurface().isValid())
-            {
-                Canvas canvas = _processedSurfaceHolder.lockCanvas();
-            
-                canvas.drawBitmap(_outBmp, null, new Paint());
-
-                _processedSurfaceHolder.unlockCanvasAndPost(canvas);
-           }
         }
     };
     
@@ -294,26 +290,6 @@ public class MainActivity extends Activity implements SurfaceHolder.Callback
                     _camera = null;
             }
             super.onPause();
-    }
-
-    public void surfaceCreated(SurfaceHolder holder) {
-        try {
-            if (_camera != null) {
-                _camera.setPreviewDisplay(holder);
-            }
-        } catch (IOException exception) {
-            Log.e(TAG, "IOException caused by setPreviewDisplay()", exception);
-        }
-    }
-
-    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-        //
-    }
-
-    public void surfaceDestroyed(SurfaceHolder holder) {
-        if (_camera != null) {
-            _camera.stopPreview();
-        }
     }
 
 }

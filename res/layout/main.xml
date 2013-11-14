@@ -5,17 +5,16 @@
     android:layout_height="match_parent"
     android:orientation="vertical" >
 
-        <SurfaceView
-            android:id="@+id/surfaceView"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content" 
-            android:layout_weight="50"
-        />
-    
-        <SurfaceView
-            android:id="@+id/imageView"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content" 
-            android:layout_weight="50" />
+    <SurfaceView
+        android:id="@+id/previewView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content" 
+        android:layout_weight="50" />
+
+    <ImageView
+        android:id="@+id/processedView"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content" 
+        android:layout_weight="50" />    
     
 </LinearLayout>
