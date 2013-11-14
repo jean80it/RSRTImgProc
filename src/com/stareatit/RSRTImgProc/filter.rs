@@ -120,37 +120,33 @@ void SimpleBlur(const uchar *v_in, uchar4 *v_out, const void *usrData, uint32_t 
 // 1 0 -1
 // 2 0 -2
 // 1 0 -1
-// 
-// separated into
 //
-// 1
-// 2
-// 1
-//
-// and
-// 
-// 1 0 -1
-//
-// first pass takes uchar scalar values and fills output of float scalar values;
-// second pass takes that single float channel and outputs three identical
-// RGB channels, to compose a grayscale bitmap
-//
-void SobelFirstPassH(const uchar *v_in, float *v_out, const void *usrData, uint32_t x, uint32_t y) 
+void SobelFirstPass(const uchar *v_in, float *v_out, const void *usrData, uint32_t x, uint32_t y) 
 {
-    const uchar *e12 = rsGetElementAt(gIn, clamp((float)x - 1, 0.0f, (float)width), y); // no int clamp ?!?!? we need to clamp to avoid
-    const uchar *e32 = rsGetElementAt(gIn, clamp((float)x + 1, 0.0f, (float)width), y); // TODO: use rsGetElementAt_TYPE to allow for better optimization
+    const uchar *e11 = rsGetElementAt(gIn, clamp((float)x-1,0.0f,width), clamp((float)y - 1, 0.0f, (float)height)); 
+    const uchar *e12 = rsGetElementAt(gIn, clamp((float)x-1,0.0f,width), y); 
+    const uchar *e13 = rsGetElementAt(gIn, clamp((float)x-1,0.0f,width), clamp((float)y + 1, 0.0f, (float)height));
+    
+    const uchar *e31 = rsGetElementAt(gIn, clamp((float)x+1,0.0f,width), clamp((float)y - 1, 0.0f, (float)height)); 
+    const uchar *e32 = rsGetElementAt(gIn, clamp((float)x+1,0.0f,width), y); 
+    const uchar *e33 = rsGetElementAt(gIn, clamp((float)x+1,0.0f,width), clamp((float)y + 1, 0.0f, (float)height));
 
-    //rsSetElementAt_float(gTmp, (*e12 - *e32), x, y);
-    *v_out = *e12 - *e32;
+    *v_out =(*e12 - *e32)*2 + *e11 + *e13 - *e31 - *e33;
 }
 
-void SobelSecondPassV(const float *v_in, uchar4 *v_out, const void *usrData, uint32_t x, uint32_t y) 
+void SobelSecondPass(const uchar *v_in, uchar4 *v_out, const void *usrData, uint32_t x, uint32_t y) 
 {
-    const float *e21 = rsGetElementAt(gTmp, x, clamp((float)y - 1, 0.0f, (float)height)); 
-    const float *e22 = rsGetElementAt(gTmp, x, y); 
-    const float *e23 = rsGetElementAt(gTmp, x, clamp((float)y + 1, 0.0f, (float)height));
-
-    uchar res =  clamp(*e22*2 + *e21 + *e23, 0.0f, 255.0f);
+    const uchar *e11 = rsGetElementAt(gIn, clamp((float)x-1,0.0f,width), clamp((float)y - 1, 0.0f, (float)height)); 
+    const uchar *e21 = rsGetElementAt(gIn, x, clamp((float)y - 1, 0.0f, (float)height)); 
+    const uchar *e31 = rsGetElementAt(gIn, clamp((float)x+1,0.0f,width), clamp((float)y - 1, 0.0f, (float)height));
     
-    *v_out =(uchar4){res, res, res, 255};
+    const uchar *e13 = rsGetElementAt(gIn, clamp((float)x-1,0.0f,width), clamp((float)y + 1, 0.0f, (float)height)); 
+    const uchar *e23 = rsGetElementAt(gIn, x, clamp((float)y + 1, 0.0f, (float)height)); 
+    const uchar *e33 = rsGetElementAt(gIn, clamp((float)x+1,0.0f,width), clamp((float)y + 1, 0.0f, (float)height));
+
+    const float *lastPassResult = rsGetElementAt(gTmp, x, y);
+
+    uchar res =  (uchar)clamp((*e21 - *e23)*2 + *e11 - *e13 + *e31 - *e33 + *lastPassResult, 0.0f, 255.0f);
+    
+    *v_out = (uchar4){res, res, res, 255};
 }
