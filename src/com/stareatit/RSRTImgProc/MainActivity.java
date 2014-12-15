@@ -259,9 +259,6 @@ public class MainActivity extends Activity
                 
                 // CALL THE ACTUAL RS FILTER
                 
-                // single kernel call
-                //_filtersLib.forEach_GetBorder(_inData, _outData);
-                
                 // two calls to execute a two-pass filter
                 _filtersLib.forEach_SobelFirstPass(_inData, _tmpData);
                 _filtersLib.forEach_SobelSecondPass(_inData, _outData);
